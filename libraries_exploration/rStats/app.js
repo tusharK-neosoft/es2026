@@ -1,5 +1,4 @@
-// rStats.js demo: loads the library (jsDelivr by default, ../dist/rstats.js with ?src=local) and the mixed-models
-// area, which is not in the single-file bundle (dist/mixed.js), and builds the tabs.
+// rStats.js demo: bundled standalone build of the library and mixed-models area.
 
 import { applyI18n, getLang, initLang, setLang, t } from "./i18n.js";
 import { h, setChildren, storage } from "./util.js";
@@ -11,20 +10,14 @@ import { createLinalgTab } from "./linalg.js";
 import { createDescriptiveTab } from "./descriptive.js";
 import { createNumericsTab } from "./numerics.js";
 import { createCompareTab } from "./examples.js";
+import * as lib from "@numero-uno-jpn/rstats";
+import * as mixed from "@numero-uno-jpn/rstats/mixed";
+import examplesFile from "./examples.json";
+import rResults from "./r-results.json";
 
-/** The release whose build is loaded from jsDelivr. */
 const VERSION = "v1.3.0";
-// jsDelivr's npm route: its GitHub route (cdn.jsdelivr.net/gh/...) does not serve release tags from v0.12.0 on, since
-// the repository with its test fixtures exceeds its size limit of 50 MB
-const CDN_DIST = `https://cdn.jsdelivr.net/npm/@numero-uno-jpn/rstats@${VERSION.slice(1)}/dist/`;
-const LOCAL_DIST = "../dist/";
-
-const params = new URLSearchParams(location.search);
-const source = params.get("src") === "local" ? "local" : "cdn";
-const distUrl = new URL(source === "local" ? LOCAL_DIST : CDN_DIST, location.href).href;
-const libUrl = `${distUrl}rstats.js`;
-/** The mixed-models area (lmer): a separate file, since it is not in dist/rstats.js */
-const mixedUrl = `${distUrl}mixed.js`;
+const source = "bundled";
+const libUrl = "@numero-uno-jpn/rstats";
 
 const ALL_TABS = ["distributions", "descriptive", "special", "random", "tests", "linalg", "numerics", "compare"];
 /** Tabs that need functions newer than some builds: shown only when the loaded build has them */
@@ -78,11 +71,7 @@ let state = { phase: "loading" };
 function renderStatus() {
   statusEl.dataset.state = state.phase;
   statusEl.dataset.source = source;
-  const where = t(source === "local" ? "status.local" : "status.cdn");
-  const switchLink =
-    source === "local"
-      ? h("a", { href: "?", i18n: "status.useCdn" })
-      : h("a", { href: "?src=local", i18n: "status.useLocal" });
+  const where = t("status.local");
   if (state.phase === "loading") setChildren(statusEl, t("status.loading", VERSION, where));
   else if (state.phase === "error") setChildren(statusEl, h("span", { class: "status-bad", text: t("status.failed", where) }));
   else
@@ -92,8 +81,6 @@ function renderStatus() {
       h("span", {}, t("status.loaded", VERSION, where, state.count)),
       " ",
       h("code", { class: "status-url", text: libUrl }),
-      " · ",
-      switchLink,
     );
 }
 
@@ -108,22 +95,9 @@ function showLoadError(err) {
       h("h2", { class: "card-title", i18n: "load.title" }),
       h("p", {}, h("span", { i18n: "load.url" }), " ", h("code", { text: libUrl })),
       h("p", { class: "mono error-text", text: String(err?.message ?? err) }),
-      source === "cdn" ? h("p", { i18n: "load.cdnHint" }) : h("p", { i18n: "load.localHint" }),
-      h("ol", { class: "steps" }, h("li", {}, h("code", { text: "npm run build" })), h("li", {}, h("code", { text: "npx serve ." }), " ", h("span", { i18n: "load.serveHint" })), h("li", {}, h("span", { i18n: "load.open" }), " ", h("code", { text: "/demo/?src=local" }))),
+      h("p", { i18n: "load.localHint" }),
     ),
   );
-}
-
-// ---------- data files ----------
-
-async function fetchJSON(name) {
-  try {
-    const res = await fetch(name, { cache: "no-cache" });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
 }
 
 // ---------- tabs ----------
@@ -196,16 +170,7 @@ function buildTabs(ctx) {
 async function start() {
   initLang(storage.get("rstats-demo-lang"), navigator.language);
   applyLang();
-  let lib;
-  let mixed;
-  try {
-    [lib, mixed] = await Promise.all([import(libUrl), import(mixedUrl)]);
-  } catch (err) {
-    showLoadError(err);
-    return;
-  }
   const mixedNames = new Set(Object.keys(mixed));
-  const [examplesFile, rResults] = await Promise.all([fetchJSON("examples.json"), fetchJSON("r-results.json")]);
   const ctx = {
     lib: { ...lib, ...mixed },
     examples: Array.isArray(examplesFile?.examples) ? examplesFile.examples : null,
@@ -216,8 +181,8 @@ async function start() {
       const fromMixed = unique.filter((n) => mixedNames.has(n));
       const fromMain = unique.filter((n) => !mixedNames.has(n));
       return [
-        ...(fromMain.length ? [`const { ${fromMain.join(", ")} } = await import("${libUrl}");`] : []),
-        ...(fromMixed.length ? [`const { ${fromMixed.join(", ")} } = await import("${mixedUrl}");`] : []),
+        ...(fromMain.length ? [`import { ${fromMain.join(", ")} } from "@numero-uno-jpn/rstats";`] : []),
+        ...(fromMixed.length ? [`import { ${fromMixed.join(", ")} } from "@numero-uno-jpn/rstats/mixed";`] : []),
       ].join("\n");
     },
   };
